@@ -1,0 +1,87 @@
+Index: api/krusty/options.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/api/krusty/options.go b/api/krusty/options.go
+--- a/api/krusty/options.go	(revision f53d0183024ba72bbf0fb8656a85d2e123f27cc9)
++++ b/api/krusty/options.go	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
+@@ -32,6 +32,9 @@
+ 
+ 	// Options related to kustomize plugins.
+ 	PluginConfig *types.PluginConfig
++
++	// Enable commit only mode
++	CommitOnly bool
+ }
+ 
+ // MakeDefaultOptions returns a default instance of Options.
+@@ -42,6 +45,7 @@
+ 		LoadRestrictions:     types.LoadRestrictionsRootOnly,
+ 		DoPrune:              false,
+ 		PluginConfig:         types.DisabledPluginConfig(),
++		CommitOnly:           false,
+ 	}
+ }
+ 
+Index: kustomize/commands/build/build.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/kustomize/commands/build/build.go b/kustomize/commands/build/build.go
+--- a/kustomize/commands/build/build.go	(revision f53d0183024ba72bbf0fb8656a85d2e123f27cc9)
++++ b/kustomize/commands/build/build.go	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
+@@ -24,8 +24,10 @@
+ 		plugins        bool
+ 		managedByLabel bool
+ 		helm           bool
++		commitOnly     bool
+ 	}
+ 	helmCommand    string
++	commitOnly     string
+ 	loadRestrictor string
+ 	reorderOutput  string
+ 	fnOptions      types.FnPluginLoadingOptions
+@@ -101,6 +103,7 @@
+ 	AddFlagOutputPath(cmd.Flags())
+ 	AddFunctionBasicsFlags(cmd.Flags())
+ 	AddFlagLoadRestrictor(cmd.Flags())
++	AddFlagCommitOnly(cmd.Flags())
+ 	AddFlagEnablePlugins(cmd.Flags())
+ 	AddFlagReorderOutput(cmd.Flags())
+ 	AddFlagEnableManagedbyLabel(cmd.Flags())
+@@ -133,6 +136,7 @@
+ func HonorKustomizeFlags(kOpts *krusty.Options) *krusty.Options {
+ 	kOpts.DoLegacyResourceSort = getFlagReorderOutput() == legacy
+ 	kOpts.LoadRestrictions = getFlagLoadRestrictorValue()
++	kOpts.CommitOnly = isCommitOnlyEnabled()
+ 	if theFlags.enable.plugins {
+ 		c := types.EnabledPluginConfig(types.BploUseStaticallyLinked)
+ 		c.FnpLoadingOptions = theFlags.fnOptions
+Index: kustomize/commands/build/flagcommitonly.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/kustomize/commands/build/flagcommitonly.go b/kustomize/commands/build/flagcommitonly.go
+new file mode 100644
+--- /dev/null	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
++++ b/kustomize/commands/build/flagcommitonly.go	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
+@@ -0,0 +1,16 @@
++package build
++
++import "github.com/spf13/pflag"
++
++// AddFlagCommitOnly adds the --commit-only flag.
++func AddFlagCommitOnly(set *pflag.FlagSet) {
++	set.BoolVar(
++		&theFlags.enable.commitOnly,
++		"commit-only",
++		false,
++		"Enable use of the commit only mode.")
++}
++
++func isCommitOnlyEnabled() bool {
++	return theFlags.enable.commitOnly
++}

@@ -1,0 +1,170 @@
+Index: api/ifc/ifc.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/api/ifc/ifc.go b/api/ifc/ifc.go
+--- a/api/ifc/ifc.go	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
++++ b/api/ifc/ifc.go	(revision b3ba860982a16b33dd014af36666265af80f7328)
+@@ -44,6 +44,9 @@
+ 
+ 	// Cleanup cleans the loader
+ 	Cleanup() error
++
++	// SetCommitOnlyMode set commit only mode
++	SetCommitOnlyMode(commitOnly bool)
+ }
+ 
+ // KustHasher returns a hash of the argument
+Index: api/krusty/kustomizer.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/api/krusty/kustomizer.go b/api/krusty/kustomizer.go
+--- a/api/krusty/kustomizer.go	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
++++ b/api/krusty/kustomizer.go	(revision b3ba860982a16b33dd014af36666265af80f7328)
+@@ -59,6 +59,7 @@
+ 		lr = fLdr.RestrictionRootOnly
+ 	}
+ 	ldr, err := fLdr.NewLoader(lr, path, fSys)
++	ldr.SetCommitOnlyMode(b.options.CommitOnly)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+Index: api/loader/fileloader.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/api/loader/fileloader.go b/api/loader/fileloader.go
+--- a/api/loader/fileloader.go	(revision ba4159fc912689cfb89e8e566a5f74e3227f5483)
++++ b/api/loader/fileloader.go	(revision b3ba860982a16b33dd014af36666265af80f7328)
+@@ -10,6 +10,7 @@
+ 	"net/http"
+ 	"net/url"
+ 	"path/filepath"
++	"regexp"
+ 	"strings"
+ 
+ 	"sigs.k8s.io/kustomize/api/ifc"
+@@ -25,6 +26,8 @@
+ 	return err == nil && (u.Scheme == "http" || u.Scheme == "https")
+ }
+ 
++const gitCommitRegexp = `^[a-fA-F0-9]{40}$`
++
+ // fileLoader is a kustomization's interface to files.
+ //
+ // The directory in which a kustomization file sits
+@@ -38,45 +41,44 @@
+ //
+ // * supplemental data paths
+ //
+-//   `Load` is used to visit these paths.
++//	`Load` is used to visit these paths.
+ //
+-//   These paths refer to resources, patches,
+-//   data for ConfigMaps and Secrets, etc.
++//	These paths refer to resources, patches,
++//	data for ConfigMaps and Secrets, etc.
+ //
+-//   The loadRestrictor may disallow certain paths
+-//   or classes of paths.
++//	The loadRestrictor may disallow certain paths
++//	or classes of paths.
+ //
+ // * bases (other kustomizations)
+ //
+-//   `New` is used to load bases.
++//	`New` is used to load bases.
+ //
+-//   A base can be either a remote git repo URL, or
+-//   a directory specified relative to the current
+-//   root. In the former case, the repo is locally
+-//   cloned, and the new loader is rooted on a path
+-//   in that clone.
++//	A base can be either a remote git repo URL, or
++//	a directory specified relative to the current
++//	root. In the former case, the repo is locally
++//	cloned, and the new loader is rooted on a path
++//	in that clone.
+ //
+-//   As loaders create new loaders, a root history
+-//   is established, and used to disallow:
++//	As loaders create new loaders, a root history
++//	is established, and used to disallow:
+ //
+-//   - A base that is a repository that, in turn,
+-//     specifies a base repository seen previously
+-//     in the loading stack (a cycle).
++//	- A base that is a repository that, in turn,
++//	  specifies a base repository seen previously
++//	  in the loading stack (a cycle).
+ //
+-//   - An overlay depending on a base positioned at
+-//     or above it.  I.e. '../foo' is OK, but '.',
+-//     '..', '../..', etc. are disallowed.  Allowing
+-//     such a base has no advantages and encourages
+-//     cycles, particularly if some future change
+-//     were to introduce globbing to file
+-//     specifications in the kustomization file.
++//	- An overlay depending on a base positioned at
++//	  or above it.  I.e. '../foo' is OK, but '.',
++//	  '..', '../..', etc. are disallowed.  Allowing
++//	  such a base has no advantages and encourages
++//	  cycles, particularly if some future change
++//	  were to introduce globbing to file
++//	  specifications in the kustomization file.
+ //
+ // These restrictions assure that kustomizations
+ // are self-contained and relocatable, and impose
+ // some safety when relying on remote kustomizations,
+ // e.g. a remotely loaded ConfigMap generator specified
+ // to read from /etc/passwd will fail.
+-//
+ type fileLoader struct {
+ 	// Loader that spawned this loader.
+ 	// Used to avoid cycles.
+@@ -103,6 +105,9 @@
+ 	// Used to clone repositories.
+ 	cloner git.Cloner
+ 
++	// Use commit only git paths
++	commitOnly bool
++
+ 	// Used to clean up, as needed.
+ 	cleaner func() error
+ }
+@@ -130,6 +135,11 @@
+ 	return ""
+ }
+ 
++// Set commit only mode
++func (fl *fileLoader) SetCommitOnlyMode(commitOnly bool) {
++	fl.commitOnly = commitOnly
++}
++
+ // Root returns the absolute path that is prepended to any
+ // relative paths used in Load.
+ func (fl *fileLoader) Root() string {
+@@ -175,6 +185,9 @@
+ 		if err = fl.errIfRepoCycle(repoSpec); err != nil {
+ 			return nil, err
+ 		}
++		if fl.commitOnly && !regexp.MustCompile(gitCommitRegexp).MatchString(repoSpec.Ref) {
++			return nil, errors.Errorf("git ref %s is not a valid commit hash in url %s", repoSpec.Ref, path)
++		}
+ 		return newLoaderAtGitClone(
+ 			repoSpec, fl.fSys, fl, fl.cloner)
+ 	}
+@@ -339,6 +352,9 @@
+ 		}
+ 		return nil, fmt.Errorf("%w: status code %d (%s)", ErrHTTP, resp.StatusCode, http.StatusText(resp.StatusCode))
+ 	}
++	if fl.commitOnly {
++		return nil, fmt.Errorf("raw URL are not allowed in commit-only mode. URL: %s", path)
++	}
+ 	content, err := io.ReadAll(resp.Body)
+ 	return content, errors.Wrap(err)
+ }
