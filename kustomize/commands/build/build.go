@@ -24,8 +24,10 @@ var theFlags struct {
 		plugins        bool
 		managedByLabel bool
 		helm           bool
+		commitOnly     bool
 	}
 	helmCommand    string
+	commitOnly     string
 	loadRestrictor string
 	reorderOutput  string
 	fnOptions      types.FnPluginLoadingOptions
@@ -101,6 +103,7 @@ func NewCmdBuild(
 	AddFlagOutputPath(cmd.Flags())
 	AddFunctionBasicsFlags(cmd.Flags())
 	AddFlagLoadRestrictor(cmd.Flags())
+	AddFlagCommitOnly(cmd.Flags())
 	AddFlagEnablePlugins(cmd.Flags())
 	AddFlagReorderOutput(cmd.Flags())
 	AddFlagEnableManagedbyLabel(cmd.Flags())
@@ -133,6 +136,7 @@ func Validate(args []string) error {
 func HonorKustomizeFlags(kOpts *krusty.Options) *krusty.Options {
 	kOpts.DoLegacyResourceSort = getFlagReorderOutput() == legacy
 	kOpts.LoadRestrictions = getFlagLoadRestrictorValue()
+	kOpts.CommitOnly = isCommitOnlyEnabled()
 	if theFlags.enable.plugins {
 		c := types.EnabledPluginConfig(types.BploUseStaticallyLinked)
 		c.FnpLoadingOptions = theFlags.fnOptions
