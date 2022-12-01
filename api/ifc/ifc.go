@@ -44,6 +44,9 @@ type Loader interface {
 
 	// Cleanup cleans the loader
 	Cleanup() error
+
+	// SetCommitOnlyMode set commit only mode
+	SetCommitOnlyMode(commitOnly bool)
 }
 
 // KustHasher returns a hash of the argument

@@ -59,6 +59,7 @@ func (b *Kustomizer) Run(
 		lr = fLdr.RestrictionRootOnly
 	}
 	ldr, err := fLdr.NewLoader(lr, path, fSys)
+	ldr.SetCommitOnlyMode(b.options.CommitOnly)
 	if err != nil {
 		return nil, err
 	}

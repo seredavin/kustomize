@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"sigs.k8s.io/kustomize/api/ifc"
@@ -25,6 +26,8 @@ func IsRemoteFile(path string) bool {
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https")
 }
 
+const gitCommitRegexp = `^[a-fA-F0-9]{40}$`
+
 // fileLoader is a kustomization's interface to files.
 //
 // The directory in which a kustomization file sits
@@ -38,45 +41,44 @@ func IsRemoteFile(path string) bool {
 //
 // * supplemental data paths
 //
-//   `Load` is used to visit these paths.
+//	`Load` is used to visit these paths.
 //
-//   These paths refer to resources, patches,
-//   data for ConfigMaps and Secrets, etc.
+//	These paths refer to resources, patches,
+//	data for ConfigMaps and Secrets, etc.
 //
-//   The loadRestrictor may disallow certain paths
-//   or classes of paths.
+//	The loadRestrictor may disallow certain paths
+//	or classes of paths.
 //
 // * bases (other kustomizations)
 //
-//   `New` is used to load bases.
+//	`New` is used to load bases.
 //
-//   A base can be either a remote git repo URL, or
-//   a directory specified relative to the current
-//   root. In the former case, the repo is locally
-//   cloned, and the new loader is rooted on a path
-//   in that clone.
+//	A base can be either a remote git repo URL, or
+//	a directory specified relative to the current
+//	root. In the former case, the repo is locally
+//	cloned, and the new loader is rooted on a path
+//	in that clone.
 //
-//   As loaders create new loaders, a root history
-//   is established, and used to disallow:
+//	As loaders create new loaders, a root history
+//	is established, and used to disallow:
 //
-//   - A base that is a repository that, in turn,
-//     specifies a base repository seen previously
-//     in the loading stack (a cycle).
+//	- A base that is a repository that, in turn,
+//	  specifies a base repository seen previously
+//	  in the loading stack (a cycle).
 //
-//   - An overlay depending on a base positioned at
-//     or above it.  I.e. '../foo' is OK, but '.',
-//     '..', '../..', etc. are disallowed.  Allowing
-//     such a base has no advantages and encourages
-//     cycles, particularly if some future change
-//     were to introduce globbing to file
-//     specifications in the kustomization file.
+//	- An overlay depending on a base positioned at
+//	  or above it.  I.e. '../foo' is OK, but '.',
+//	  '..', '../..', etc. are disallowed.  Allowing
+//	  such a base has no advantages and encourages
+//	  cycles, particularly if some future change
+//	  were to introduce globbing to file
+//	  specifications in the kustomization file.
 //
 // These restrictions assure that kustomizations
 // are self-contained and relocatable, and impose
 // some safety when relying on remote kustomizations,
 // e.g. a remotely loaded ConfigMap generator specified
 // to read from /etc/passwd will fail.
-//
 type fileLoader struct {
 	// Loader that spawned this loader.
 	// Used to avoid cycles.
@@ -103,6 +105,9 @@ type fileLoader struct {
 	// Used to clone repositories.
 	cloner git.Cloner
 
+	// Use commit only git paths
+	commitOnly bool
+
 	// Used to clean up, as needed.
 	cleaner func() error
 }
@@ -128,6 +133,11 @@ func (fl *fileLoader) Repo() string {
 		return fl.repoSpec.Dir.String()
 	}
 	return ""
+}
+
+// Set commit only mode
+func (fl *fileLoader) SetCommitOnlyMode(commitOnly bool) {
+	fl.commitOnly = commitOnly
 }
 
 // Root returns the absolute path that is prepended to any
@@ -174,6 +184,9 @@ func (fl *fileLoader) New(path string) (ifc.Loader, error) {
 		// Treat this as git repo clone request.
 		if err = fl.errIfRepoCycle(repoSpec); err != nil {
 			return nil, err
+		}
+		if fl.commitOnly && !regexp.MustCompile(gitCommitRegexp).MatchString(repoSpec.Ref) {
+			return nil, errors.Errorf("git ref %s is not a valid commit hash in url %s", repoSpec.Ref, path)
 		}
 		return newLoaderAtGitClone(
 			repoSpec, fl.fSys, fl, fl.cloner)
@@ -338,6 +351,9 @@ func (fl *fileLoader) httpClientGetContent(path string) ([]byte, error) {
 			return nil, errors.Errorf("URL is a git repository")
 		}
 		return nil, fmt.Errorf("%w: status code %d (%s)", ErrHTTP, resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+	if fl.commitOnly {
+		return nil, fmt.Errorf("raw URL are not allowed in commit-only mode. URL: %s", path)
 	}
 	content, err := io.ReadAll(resp.Body)
 	return content, errors.Wrap(err)
